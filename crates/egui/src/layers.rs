@@ -238,17 +238,19 @@ impl GraphicLayers {
         area_order: &[LayerId],
         to_global: &ahash::HashMap<LayerId, TSTransform>,
     ) -> Vec<ClippedShape> {
-        self.drain_layers(area_order, to_global).0
+        self.drain_layers(area_order, to_global, true).0
     }
 
     /// As [`Self::drain`], and where each layer's shapes are in the result,
-    /// with the transform applied to them: what a backend needs to draw
-    /// layers apart (a layer scrolled by its transform kept as one
-    /// picture, say).
+    /// with its transform: what a backend needs to draw layers apart (a
+    /// layer scrolled by its transform kept as one picture, say). With
+    /// `apply` false the transforms are not applied to the shapes, which
+    /// stay as they were painted; the backend applies them.
     pub fn drain_layers(
         &mut self,
         area_order: &[LayerId],
         to_global: &ahash::HashMap<LayerId, TSTransform>,
+        apply: bool,
     ) -> (Vec<ClippedShape>, Vec<DrainedLayer>) {
         profiling::function_scope!();
 
@@ -268,7 +270,7 @@ impl GraphicLayers {
                 if layer_id.order == order
                     && let Some(list) = order_map.get_mut(&layer_id.id)
                 {
-                    if let Some(to_global) = to_global.get(layer_id) {
+                    if apply && let Some(to_global) = to_global.get(layer_id) {
                         for clipped_shape in &mut list.0 {
                             clipped_shape.transform(*to_global);
                         }
@@ -290,7 +292,7 @@ impl GraphicLayers {
             for (id, list) in order_map {
                 let layer_id = LayerId::new(order, *id);
 
-                if let Some(to_global) = to_global.get(&layer_id) {
+                if apply && let Some(to_global) = to_global.get(&layer_id) {
                     for clipped_shape in &mut list.0 {
                         clipped_shape.transform(*to_global);
                     }
@@ -320,7 +322,8 @@ pub struct DrainedLayer {
     /// The indices of its shapes.
     pub range: core::ops::Range<usize>,
 
-    /// The transform already applied to them (the layer's
-    /// [`crate::Context::layer_transform_to_global`]), if any.
+    /// The layer's transform ([`crate::Context::layer_transform_to_global`]),
+    /// if any: applied to the shapes already, unless the context defers
+    /// it ([`crate::Context::set_defer_layer_transforms`]).
     pub to_global: Option<TSTransform>,
 }

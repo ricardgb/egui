@@ -404,6 +404,9 @@ impl ViewportRepaintInfo {
 
 #[derive(Default)]
 struct ContextImpl {
+    /// [`Context::set_defer_layer_transforms`].
+    defer_layer_transforms: bool,
+
     fonts: Option<Fonts>,
     font_definitions: FontDefinitions,
     glyph_rasterizers: Vec<GlyphRasterizer>,
@@ -3282,9 +3285,11 @@ impl ContextImpl {
             }
         }
 
-        let (shapes, drained_layers) = viewport
-            .graphics
-            .drain_layers(self.memory.areas().order(), &self.memory.to_global);
+        let (shapes, drained_layers) = viewport.graphics.drain_layers(
+            self.memory.areas().order(),
+            &self.memory.to_global,
+            !self.defer_layer_transforms,
+        );
         viewport.drained_layers = drained_layers;
 
         let mut repaint_needed = false;
@@ -3636,6 +3641,17 @@ impl Context {
 }
 
 impl Context {
+    /// Hand over the shapes of layers that have a transform
+    /// ([`Self::set_transform_layer`]) without applying it: the backend
+    /// applies [`crate::layers::DrainedLayer::to_global`] itself, from
+    /// [`crate::ViewportState::drained_layers`]. For a backend that keeps
+    /// such a layer apart and moves it as a whole (a scrolled layer kept
+    /// as one picture), which needs its shapes exactly as painted.
+    /// Off by default.
+    pub fn set_defer_layer_transforms(&self, defer: bool) {
+        self.write(|ctx| ctx.defer_layer_transforms = defer);
+    }
+
     /// Transform the graphics of the given layer.
     ///
     /// This will also affect input.
