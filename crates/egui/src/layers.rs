@@ -238,9 +238,22 @@ impl GraphicLayers {
         area_order: &[LayerId],
         to_global: &ahash::HashMap<LayerId, TSTransform>,
     ) -> Vec<ClippedShape> {
+        self.drain_layers(area_order, to_global).0
+    }
+
+    /// As [`Self::drain`], and where each layer's shapes are in the result,
+    /// with the transform applied to them: what a backend needs to draw
+    /// layers apart (a layer scrolled by its transform kept as one
+    /// picture, say).
+    pub fn drain_layers(
+        &mut self,
+        area_order: &[LayerId],
+        to_global: &ahash::HashMap<LayerId, TSTransform>,
+    ) -> (Vec<ClippedShape>, Vec<DrainedLayer>) {
         profiling::function_scope!();
 
         let mut all_shapes: Vec<_> = Default::default();
+        let mut layers: Vec<DrainedLayer> = Default::default();
 
         for &order in &Order::ALL {
             let order_map = &mut self.0[order as usize];
@@ -260,7 +273,13 @@ impl GraphicLayers {
                             clipped_shape.transform(*to_global);
                         }
                     }
+                    let start = all_shapes.len();
                     all_shapes.append(&mut list.0);
+                    layers.push(DrainedLayer {
+                        id: *layer_id,
+                        range: start..all_shapes.len(),
+                        to_global: to_global.get(layer_id).copied(),
+                    });
                 }
             }
 
@@ -277,10 +296,31 @@ impl GraphicLayers {
                     }
                 }
 
+                let start = all_shapes.len();
                 all_shapes.append(&mut list.0);
+                if start < all_shapes.len() {
+                    layers.push(DrainedLayer {
+                        id: layer_id,
+                        range: start..all_shapes.len(),
+                        to_global: to_global.get(&layer_id).copied(),
+                    });
+                }
             }
         }
 
-        all_shapes
+        (all_shapes, layers)
     }
+}
+
+/// Where one layer's shapes are in a drained pass ([`GraphicLayers::drain_layers`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DrainedLayer {
+    pub id: LayerId,
+
+    /// The indices of its shapes.
+    pub range: core::ops::Range<usize>,
+
+    /// The transform already applied to them (the layer's
+    /// [`crate::Context::layer_transform_to_global`]), if any.
+    pub to_global: Option<TSTransform>,
 }

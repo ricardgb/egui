@@ -242,6 +242,10 @@ pub struct ViewportState {
     /// Has this viewport been updated this pass?
     pub used: bool,
 
+    /// Where each layer's shapes are in the last pass's output, and the
+    /// transform applied to them ([`crate::layers::GraphicLayers::drain_layers`]).
+    pub drained_layers: Vec<crate::layers::DrainedLayer>,
+
     /// State related to repaint scheduling.
     repaint: ViewportRepaintInfo,
 
@@ -3278,9 +3282,10 @@ impl ContextImpl {
             }
         }
 
-        let shapes = viewport
+        let (shapes, drained_layers) = viewport
             .graphics
-            .drain(self.memory.areas().order(), &self.memory.to_global);
+            .drain_layers(self.memory.areas().order(), &self.memory.to_global);
+        viewport.drained_layers = drained_layers;
 
         let mut repaint_needed = false;
 
