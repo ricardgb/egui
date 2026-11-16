@@ -99,6 +99,11 @@ pub struct Memory {
     /// * [`crate::Context::layer_transform_from_global`]
     pub to_global: HashMap<LayerId, TSTransform>,
 
+    /// A clip per layer in global coordinates, applied after its transform
+    /// ([`crate::Context::set_clip_layer`]).
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    pub(crate) layer_clip: HashMap<LayerId, crate::Rect>,
+
     // -------------------------------------------------
     // Per-viewport:
     areas: ViewportIdMap<Areas>,
@@ -140,6 +145,7 @@ impl Default for Memory {
             viewport_id: Default::default(),
             areas: Default::default(),
             to_global: Default::default(),
+            layer_clip: Default::default(),
             popups: Default::default(),
             everything_is_visible: Default::default(),
             add_fonts: Default::default(),

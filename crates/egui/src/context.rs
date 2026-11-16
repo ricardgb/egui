@@ -3288,6 +3288,7 @@ impl ContextImpl {
         let (shapes, drained_layers) = viewport.graphics.drain_layers(
             self.memory.areas().order(),
             &self.memory.to_global,
+            &self.memory.layer_clip,
             !self.defer_layer_transforms,
         );
         viewport.drained_layers = drained_layers;
@@ -3641,6 +3642,22 @@ impl Context {
 }
 
 impl Context {
+    /// Clip the given layer in global coordinates, after its transform
+    /// ([`Self::set_transform_layer`]): what it shows stays inside `clip` on
+    /// the screen however the transform moves its content, while its shapes
+    /// keep the clips they were painted with. `None` removes it.
+    ///
+    /// This is a sticky setting, remembered from one frame to the next.
+    pub fn set_clip_layer(&self, layer_id: LayerId, clip: Option<Rect>) {
+        self.memory_mut(|m| {
+            if let Some(clip) = clip {
+                m.layer_clip.insert(layer_id, clip);
+            } else {
+                m.layer_clip.remove(&layer_id);
+            }
+        });
+    }
+
     /// Hand over the shapes of layers that have a transform
     /// ([`Self::set_transform_layer`]) without applying it: the backend
     /// applies [`crate::layers::DrainedLayer::to_global`] itself, from

@@ -238,7 +238,7 @@ impl GraphicLayers {
         area_order: &[LayerId],
         to_global: &ahash::HashMap<LayerId, TSTransform>,
     ) -> Vec<ClippedShape> {
-        self.drain_layers(area_order, to_global, true).0
+        self.drain_layers(area_order, to_global, &Default::default(), true).0
     }
 
     /// As [`Self::drain`], and where each layer's shapes are in the result,
@@ -246,10 +246,14 @@ impl GraphicLayers {
     /// layer scrolled by its transform kept as one picture, say). With
     /// `apply` false the transforms are not applied to the shapes, which
     /// stay as they were painted; the backend applies them.
+    ///
+    /// `layer_clip`: a clip per layer in global coordinates, intersected
+    /// with its shapes' clips after the transform (when it is applied here).
     pub fn drain_layers(
         &mut self,
         area_order: &[LayerId],
         to_global: &ahash::HashMap<LayerId, TSTransform>,
+        layer_clip: &ahash::HashMap<LayerId, Rect>,
         apply: bool,
     ) -> (Vec<ClippedShape>, Vec<DrainedLayer>) {
         profiling::function_scope!();
@@ -270,10 +274,8 @@ impl GraphicLayers {
                 if layer_id.order == order
                     && let Some(list) = order_map.get_mut(&layer_id.id)
                 {
-                    if apply && let Some(to_global) = to_global.get(layer_id) {
-                        for clipped_shape in &mut list.0 {
-                            clipped_shape.transform(*to_global);
-                        }
+                    if apply {
+                        place(&mut list.0, to_global.get(layer_id), layer_clip.get(layer_id));
                     }
                     let start = all_shapes.len();
                     all_shapes.append(&mut list.0);
@@ -281,6 +283,7 @@ impl GraphicLayers {
                         id: *layer_id,
                         range: start..all_shapes.len(),
                         to_global: to_global.get(layer_id).copied(),
+                        clip: layer_clip.get(layer_id).copied(),
                     });
                 }
             }
@@ -292,10 +295,8 @@ impl GraphicLayers {
             for (id, list) in order_map {
                 let layer_id = LayerId::new(order, *id);
 
-                if apply && let Some(to_global) = to_global.get(&layer_id) {
-                    for clipped_shape in &mut list.0 {
-                        clipped_shape.transform(*to_global);
-                    }
+                if apply {
+                    place(&mut list.0, to_global.get(&layer_id), layer_clip.get(&layer_id));
                 }
 
                 let start = all_shapes.len();
@@ -305,12 +306,25 @@ impl GraphicLayers {
                         id: layer_id,
                         range: start..all_shapes.len(),
                         to_global: to_global.get(&layer_id).copied(),
+                        clip: layer_clip.get(&layer_id).copied(),
                     });
                 }
             }
         }
 
         (all_shapes, layers)
+    }
+}
+
+/// A layer's shapes where its transform puts them, clipped by its global clip.
+fn place(shapes: &mut [ClippedShape], to_global: Option<&TSTransform>, clip: Option<&Rect>) {
+    for clipped_shape in shapes {
+        if let Some(to_global) = to_global {
+            clipped_shape.transform(*to_global);
+        }
+        if let Some(clip) = clip {
+            clipped_shape.clip_rect = clipped_shape.clip_rect.intersect(*clip);
+        }
     }
 }
 
@@ -326,4 +340,9 @@ pub struct DrainedLayer {
     /// if any: applied to the shapes already, unless the context defers
     /// it ([`crate::Context::set_defer_layer_transforms`]).
     pub to_global: Option<TSTransform>,
+
+    /// Its clip in global coordinates ([`crate::Context::set_clip_layer`]),
+    /// to intersect with its shapes' clips once they are where `to_global`
+    /// puts them: applied already, unless the context defers transforms.
+    pub clip: Option<Rect>,
 }
